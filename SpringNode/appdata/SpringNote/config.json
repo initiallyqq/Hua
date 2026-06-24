@@ -1,0 +1,23 @@
+{
+  "dailyWorkHours": 8.0,
+  "dailySalary": 200.0,
+  "industry": "互联网",
+  "appFont": "system",
+  "fontScale": 100.0,
+  "autoStart": false,
+  "showUpdates": true,
+  "showDesktopWidget": false,
+  "showTrayIcon": true,
+  "closeToTray": true,
+  "memorySearchLimit": 3.0,
+  "apiLogEnabled": false,
+  "providers": [],
+  "defaultModels": {
+    "intelligentGenerationModel": null,
+    "editCompletionModel": null,
+    "memoryBookModel": null
+  },
+  "hotkeys": {
+    "toggleWindow": "Ctrl+Shift+S"
+  }
+}
