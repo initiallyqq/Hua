@@ -668,6 +668,29 @@ input::placeholder {
   overflow: hidden;
 }
 
+.cowrite-note-info {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--color-paper-deep);
+  background: var(--color-paper);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cowrite-note-info-label {
+  font-size: 11px;
+  color: var(--color-ink-ghost);
+}
+
+.cowrite-note-info-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cowrite-sidebar-header {
   display: flex;
   align-items: center;

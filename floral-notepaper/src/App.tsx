@@ -18,6 +18,7 @@ import type { AppView } from "./components/AppSidebar";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
+import { listNotes } from "./features/notes/api";
 
 function App() {
   const route = getInitialRoute();
@@ -25,6 +26,27 @@ function App() {
   const [sidebarView, setSidebarView] = useState<AppView>("home");
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(null);
+  const [currentNoteId, setCurrentNoteId] = useState("");
+
+  const handleCurrentNoteChange = useCallback(
+    (note: { id: string; content: string }) => {
+      console.log("[App] handleCurrentNoteChange", note);
+      setCurrentNoteId(note.id);
+    },
+    [],
+  );
+
+  // 启动时如果还没有选中笔记，自动选中最新的笔记，
+  // 这样用户可以直接点“共笔”而不必先进入笔记页手动选择。
+  useEffect(() => {
+    listNotes()
+      .then((notes) => {
+        if (notes.length > 0) {
+          setCurrentNoteId((id) => id || notes[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cleanup = () => {};
@@ -156,12 +178,8 @@ function App() {
               <DashboardPage />
             ) : sidebarView === "playback" ? (
               <InkPlaybackPage />
-            ) : sidebarView === "cowrite" && settingsConfig ? (
-              <CoWritePage
-                providers={providers}
-                noteId=""
-                noteContent=""
-              />
+            ) : sidebarView === "cowrite" ? (
+              <CoWritePage providers={providers} noteId={currentNoteId} />
             ) : sidebarView === "settings" && settingsConfig ? (
               <SettingsPage
                 config={settingsConfig}
@@ -173,6 +191,7 @@ function App() {
             ) : (
               <MainWindow
                 initialConfig={settingsConfig ?? undefined}
+                onCurrentNoteChange={handleCurrentNoteChange}
               />
             )}
           </div>

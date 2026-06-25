@@ -42,6 +42,7 @@ export async function requestCoWriteAITurn(
   }
 
   const messages = buildCoWriteMessages(session, identity, customPrompt);
+  console.log("[coWriteAI] request", { url: config.apiUrl, model: config.modelId, messages });
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -62,14 +63,20 @@ export async function requestCoWriteAITurn(
     }),
   });
 
+  console.log("[coWriteAI] response status", response.status);
+
   if (!response.ok) {
     const errorText = await response.text();
+    console.error("[coWriteAI] response error body", errorText);
     throw new Error(`AI 响应错误 (${response.status}): ${errorText}`);
   }
 
   const data = await response.json();
+  console.log("[coWriteAI] response data", data);
+
   const content: string =
     data.choices?.[0]?.message?.content ?? "（未收到回复）";
 
+  console.log("[coWriteAI] extracted content", content);
   return content.trim();
 }

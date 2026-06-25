@@ -2273,6 +2273,8 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
+            providers: Vec::new(),
+            default_models: Default::default(),
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -2324,6 +2326,8 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            providers: Vec::new(),
+            default_models: Default::default(),
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -2356,6 +2360,8 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            providers: Vec::new(),
+            default_models: Default::default(),
         };
 
         assert_eq!(

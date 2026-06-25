@@ -133,14 +133,16 @@ pub fn get_stats() -> Result<StatsData, AppError> {
     let mut usage_map: BTreeMap<String, DayUsage> = BTreeMap::new();
 
     for entry in &usage_log {
-        let day = usage_map.entry(entry.date.clone()).or_insert_with(|| DayUsage {
-            date: entry.date.clone(),
-            total_tokens: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            cached_tokens: 0,
-            provider_tokens: BTreeMap::new(),
-        });
+        let day = usage_map
+            .entry(entry.date.clone())
+            .or_insert_with(|| DayUsage {
+                date: entry.date.clone(),
+                total_tokens: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                cached_tokens: 0,
+                provider_tokens: BTreeMap::new(),
+            });
         day.input_tokens += entry.input_tokens;
         day.output_tokens += entry.output_tokens;
         day.cached_tokens += entry.cached_tokens;

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProviderConfig } from "../features/settings/types";
 import type {
   CoWriteIdentity,
   CoWriteSession,
   CoWriteSessionSummary,
 } from "../features/cowrite/types";
+import type { ProviderConfig } from "../features/settings/types";
 import {
   createCoWriteSession,
   appendHumanText,
@@ -15,12 +15,11 @@ import {
   deleteCoWriteSession,
 } from "../features/cowrite/api";
 import { requestCoWriteAITurn } from "../features/cowrite/coWriteAI";
-import { blocksToText, formatSessionPreview, sessionWordCount } from "../features/cowrite/coWriteUtils";
+import { getNote } from "../features/notes/api";
 
-interface CoWritePageProps {
+export interface CoWritePageProps {
   providers: ProviderConfig[];
   noteId: string;
-  noteContent: string;
 }
 
 const IDENTITY_OPTIONS: { key: CoWriteIdentity; label: string; desc: string }[] = [
@@ -31,7 +30,7 @@ const IDENTITY_OPTIONS: { key: CoWriteIdentity; label: string; desc: string }[] 
   { key: "custom", label: "自定义", desc: "自己定义 AI 的角色" },
 ];
 
-export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps) {
+export function CoWritePage({ providers, noteId }: CoWritePageProps) {
   const [sessions, setSessions] = useState<CoWriteSessionSummary[]>([]);
   const [activeSession, setActiveSession] = useState<CoWriteSession | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -42,13 +41,44 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<number>>(new Set());
   const [mergeDone, setMergeDone] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noteTitle, setNoteTitle] = useState<string | null>(null);
   const editRef = useRef<HTMLDivElement>(null);
 
-  // 加载会话列表
+  // 新内容自动滚动到底部
   useEffect(() => {
+    if (editRef.current) {
+      editRef.current.scrollTo({
+        top: editRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [activeSession?.blocks.length]);
+
+  // 加载当前笔记标题，显示在侧边栏顶部
+  useEffect(() => {
+    if (!noteId) {
+      setNoteTitle(null);
+      return;
+    }
+    getNote(noteId)
+      .then((note) => setNoteTitle(note.title || null))
+      .catch(() => setNoteTitle(null));
+  }, [noteId]);
+
+  // 加载会话列表，笔记切换时清空当前会话避免串到其它笔记
+  useEffect(() => {
+    setErrorMessage(null);
+    setActiveSession(null);
+    setActiveSessionId(null);
+    setSelectedBlocks(new Set());
+    setMergeDone(false);
     listCoWriteSessions(noteId)
       .then(setSessions)
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        setErrorMessage(e instanceof Error ? e.message : "加载会话列表失败");
+      });
   }, [noteId]);
 
   // 切换到某个会话
@@ -59,8 +89,10 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
       setActiveSessionId(sessionId);
       setSelectedBlocks(new Set());
       setMergeDone(false);
+      setErrorMessage(null);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "加载会话失败");
     }
   }, []);
 
@@ -76,10 +108,12 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
       setActiveSessionId(session.id);
       setShowNewDialog(false);
       setCustomPrompt("");
+      setErrorMessage(null);
       const list = await listCoWriteSessions(noteId);
       setSessions(list);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "创建会话失败");
     }
   }, [noteId, selectedIdentity, customPrompt]);
 
@@ -90,15 +124,23 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
       const updated = await appendHumanText(activeSessionId, humanInput.trim());
       setActiveSession(updated);
       setHumanInput("");
+      setErrorMessage(null);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "提交失败");
     }
   }, [humanInput, activeSessionId]);
 
-  // AI 续写
+  // AI 续写（PRD 原版：前端直接调用 DeepSeek）
   const handleAITurn = useCallback(async () => {
-    if (!activeSession || aiLoading) return;
+    console.log("[cowrite] handleAITurn clicked", { activeSessionId, aiLoading, hasActiveSession: !!activeSession });
+    if (!activeSession || aiLoading) {
+      console.warn("[cowrite] handleAITurn early return", { activeSession, aiLoading });
+      return;
+    }
     setAiLoading(true);
+    setErrorMessage(null);
+    console.log("[cowrite] requesting AI turn for session", activeSession.id);
     try {
       const aiText = await requestCoWriteAITurn(
         activeSession,
@@ -106,10 +148,21 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
         activeSession.customPrompt,
         providers,
       );
+      console.log("[cowrite] AI raw text", JSON.stringify(aiText));
+      if (!aiText.trim()) {
+        throw new Error("AI 返回内容为空");
+      }
       const updated = await appendAIText(activeSession.id, aiText);
+      console.log(
+        "[cowrite] AI turn success | blocks count:",
+        updated.blocks.length,
+        "last author:",
+        updated.blocks[updated.blocks.length - 1]?.author,
+      );
       setActiveSession(updated);
     } catch (e) {
-      console.error(e);
+      console.error("[cowrite] AI turn failed", e);
+      setErrorMessage(e instanceof Error ? e.message : "AI 调用失败");
     } finally {
       setAiLoading(false);
     }
@@ -121,8 +174,10 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
     try {
       await mergeToNote(activeSessionId, Array.from(selectedBlocks).sort((a, b) => a - b));
       setMergeDone(true);
+      setErrorMessage(null);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "合并失败");
     }
   }, [activeSessionId, selectedBlocks]);
 
@@ -134,10 +189,12 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
         setActiveSession(null);
         setActiveSessionId(null);
       }
+      setErrorMessage(null);
       const list = await listCoWriteSessions(noteId);
       setSessions(list);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "删除失败");
     }
   }, [noteId, activeSessionId]);
 
@@ -158,13 +215,41 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
         : "ai")
     : "human";
 
+  console.log("[cowrite] render", { noteId, activeSessionId, currentTurn, blocksCount: activeSession?.blocks.length });
+
+  const hasNote = Boolean(noteId);
+
+  if (!hasNote) {
+    return (
+      <div className="cowrite-container">
+        <div className="cowrite-main" style={{ width: "100%" }}>
+          <div className="cowrite-placeholder">
+            请先在左侧边栏点击“笔记”，选择一篇笔记后再开始共笔
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="cowrite-container">
       {/* 左侧：会话列表 */}
       <div className="cowrite-sidebar">
+        {noteId && (
+          <div className="cowrite-note-info" title={noteTitle ?? noteId}>
+            <span className="cowrite-note-info-label">当前笔记</span>
+            <span className="cowrite-note-info-title">
+              {noteTitle || "（无标题）"}
+            </span>
+          </div>
+        )}
         <div className="cowrite-sidebar-header">
           <h3>共笔会话</h3>
-          <button className="cowrite-btn-new" onClick={() => setShowNewDialog(true)}>
+          <button
+            className="cowrite-btn-new"
+            onClick={() => setShowNewDialog(true)}
+            title="新建共笔会话"
+          >
             + 新建
           </button>
         </div>
@@ -185,7 +270,7 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
                   </span>
                   <span className="cowrite-session-count">{s.blockCount} 段</span>
                 </div>
-                <div className="cowrite-session-preview">{formatSessionPreview([]) || s.preview}</div>
+                <div className="cowrite-session-preview">{s.preview}</div>
                 <button
                   className="cowrite-session-delete"
                   onClick={(e) => {
@@ -203,6 +288,20 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
 
       {/* 右侧：编辑区 */}
       <div className="cowrite-main">
+        {errorMessage && (
+          <div
+            className="cowrite-error-bar"
+            style={{
+              padding: "10px 20px",
+              fontSize: "12px",
+              color: "#ef4444",
+              background: "var(--color-danger-bg)",
+              borderBottom: "1px solid var(--color-paper-deep)",
+            }}
+          >
+            {errorMessage}
+          </div>
+        )}
         {!activeSession ? (
           <div className="cowrite-placeholder">
             选择一个共笔会话，或新建一个
@@ -262,7 +361,10 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
                   </button>
                   <button
                     className="cowrite-btn-ai"
-                    onClick={handleAITurn}
+                    onClick={() => {
+                      console.log("[cowrite] button '轮到 AI' clicked (human turn)");
+                      void handleAITurn();
+                    }}
                     disabled={aiLoading}
                   >
                     轮到 AI
@@ -273,7 +375,13 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
 
             {currentTurn === "ai" && !aiLoading && (
               <div className="cowrite-input-area">
-                <button className="cowrite-btn-ai" onClick={handleAITurn}>
+                <button
+                  className="cowrite-btn-ai"
+                  onClick={() => {
+                    console.log("[cowrite] button '轮到 AI' clicked (ai turn)");
+                    void handleAITurn();
+                  }}
+                >
                   轮到 AI
                 </button>
               </div>

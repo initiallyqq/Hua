@@ -337,6 +337,11 @@ fn cowrite_append_ai(session_id: String, text: String) -> Result<CoWriteSession,
 }
 
 #[tauri::command]
+async fn cowrite_request_ai(session_id: String) -> Result<CoWriteSession, AppError> {
+    cowrite::request_ai_turn(&session_id).await
+}
+
+#[tauri::command]
 fn cowrite_get_session(session_id: String) -> Result<CoWriteSession, AppError> {
     cowrite::get_session(&session_id)
 }
@@ -348,10 +353,11 @@ fn cowrite_list_sessions(note_id: String) -> Result<Vec<CoWriteSessionSummary>, 
 
 #[tauri::command]
 fn cowrite_merge_to_note(
+    app: AppHandle,
     session_id: String,
     selected_block_indices: Vec<usize>,
 ) -> Result<String, AppError> {
-    cowrite::merge_to_note(&session_id, &selected_block_indices)
+    cowrite::merge_to_note(&app, &session_id, &selected_block_indices)
 }
 
 #[tauri::command]
@@ -419,6 +425,7 @@ pub fn run() {
             cowrite_create_session,
             cowrite_append_human,
             cowrite_append_ai,
+            cowrite_request_ai,
             cowrite_get_session,
             cowrite_list_sessions,
             cowrite_merge_to_note,

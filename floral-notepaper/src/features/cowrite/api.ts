@@ -42,7 +42,7 @@ export function listCoWriteSessions(
 export function mergeToNote(
   sessionId: string,
   selectedBlockIndices: number[],
-): Promise<{ content: string }> {
+): Promise<string> {
   return invoke("cowrite_merge_to_note", { sessionId, selectedBlockIndices });
 }
 

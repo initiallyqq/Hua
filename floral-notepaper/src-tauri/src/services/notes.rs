@@ -1322,6 +1322,8 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
             open_at_cursor: true,
+            providers: Vec::new(),
+            default_models: Default::default(),
         };
 
         store.save_config(saved.clone()).expect("save config");
