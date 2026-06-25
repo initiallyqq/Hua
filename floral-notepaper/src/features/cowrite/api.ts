@@ -42,10 +42,21 @@ export function listCoWriteSessions(
 export function mergeToNote(
   sessionId: string,
   selectedBlockIndices: number[],
-): Promise<{ content: string }> {
+): Promise<string> {
   return invoke("cowrite_merge_to_note", { sessionId, selectedBlockIndices });
 }
 
 export function deleteCoWriteSession(sessionId: string): Promise<void> {
   return invoke("cowrite_delete_session", { sessionId });
+}
+
+export function replaceLastAIText(
+  sessionId: string,
+  text: string,
+): Promise<CoWriteSession> {
+  return invoke("cowrite_replace_last_ai", { sessionId, text });
+}
+
+export function undoLastTurn(sessionId: string): Promise<CoWriteSession> {
+  return invoke("cowrite_undo_last", { sessionId });
 }

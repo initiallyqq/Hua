@@ -1,4 +1,8 @@
-import type { CoWriteIdentity, CoWriteSession } from "./types";
+import type {
+  CoWriteIdentity,
+  CoWriteScenario,
+  CoWriteSession,
+} from "./types";
 import { blocksToText } from "./coWriteUtils";
 
 export interface IdentityPreset {
@@ -7,6 +11,8 @@ export interface IdentityPreset {
   description: string;
   systemPrompt: string;
 }
+
+export interface ScenarioPreset extends CoWriteScenario {}
 
 const CONTINUATOR_PROMPT = `你是一个共笔搭档，正在和一位写作者共用一张纸写作。
 你的身份是：续写者
@@ -80,11 +86,82 @@ export const IDENTITY_PRESETS: IdentityPreset[] = [
   },
 ];
 
+export const SCENARIO_PRESETS: ScenarioPreset[] = [
+  {
+    key: "letter",
+    label: "写信",
+    icon: "✉️",
+    description: "一起写一封真挚的书信",
+    identity: "continuator",
+    systemPrompt: `你是一个共笔搭档，正在和一位写作者一起写一封书信。
+你的身份是：续写者
+
+写作规则：
+1. 保持书信格式和自然真挚的语气。
+2. 每次只写一段，1-3 句话。
+3. 顺着对方的情感和内容延续，不评价、不总结。
+4. 一段后停笔，让对方继续。`,
+    openingLine: "见字如面。最近还好吗？",
+  },
+  {
+    key: "story",
+    label: "故事接龙",
+    icon: "📖",
+    description: "一人一段，把故事编下去",
+    identity: "continuator",
+    systemPrompt: `你是一个共笔搭档，正在和一位写作者一起编故事。
+你的身份是：续写者
+
+写作规则：
+1. 每次只写一小段，1-3 句话。
+2. 顺着情节自然推进，结尾留下一点悬念。
+3. 不评价对方的文笔或设定，只负责接龙。
+4. 一段后停笔，让对方继续。`,
+    openingLine: "那个雨夜，门突然响了。",
+  },
+  {
+    key: "debate",
+    label: "辩论",
+    icon: "⚔️",
+    description: "站在对立面帮你打磨观点",
+    identity: "opposer",
+    systemPrompt: `你是一个共笔搭档，正在和一位写作者进行辩论。
+你的身份是：反对者
+
+写作规则：
+1. 每次只写 1-2 句反驳或质疑。
+2. 观点鲜明，但保持礼貌，不人身攻击。
+3. 针对对方论述的漏洞或另一种可能性展开。
+4. 一段后停笔，让对方回应。`,
+    openingLine: "我不同意你的看法——",
+  },
+  {
+    key: "diary",
+    label: "随笔日记",
+    icon: "🌿",
+    description: "轻盈即兴地记录生活",
+    identity: "poetic",
+    systemPrompt: `你是一个共笔搭档，正在和一位写作者一起写随笔日记。
+你的身份是：诗意者
+
+写作规则：
+1. 每次只写 1-2 句轻盈、即兴的描写。
+2. 捕捉生活细节，有画面感和气息。
+3. 不评价对方，不总结，只负责接下一段。
+4. 一段后停笔。`,
+    openingLine: "今天的天气让人想起……",
+  },
+];
+
+export function getScenario(key: string): ScenarioPreset | undefined {
+  return SCENARIO_PRESETS.find((s) => s.key === key);
+}
+
 export function getSystemPrompt(
   identity: CoWriteIdentity,
   customPrompt?: string,
 ): string {
-  if (identity === "custom" && customPrompt) {
+  if (customPrompt && customPrompt.trim()) {
     return customPrompt;
   }
   const preset = IDENTITY_PRESETS.find((p) => p.key === identity);

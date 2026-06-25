@@ -668,6 +668,29 @@ input::placeholder {
   overflow: hidden;
 }
 
+.cowrite-note-info {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--color-paper-deep);
+  background: var(--color-paper);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cowrite-note-info-label {
+  font-size: 11px;
+  color: var(--color-ink-ghost);
+}
+
+.cowrite-note-info-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cowrite-sidebar-header {
   display: flex;
   align-items: center;
@@ -1107,4 +1130,279 @@ input::placeholder {
 
 .cowrite-btn-create:hover {
   background: var(--color-bamboo-light);
+}
+
+/* 场景模板 */
+.cowrite-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink-faint);
+  margin-bottom: 8px;
+}
+
+.cowrite-scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.cowrite-scenario-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--color-paper-deep);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.cowrite-scenario-card:hover {
+  border-color: var(--color-bamboo);
+  background: var(--color-bamboo-mist);
+}
+
+.cowrite-scenario-card.active {
+  border-color: var(--color-bamboo);
+  background: var(--color-bamboo-mist);
+}
+
+.cowrite-scenario-icon {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.cowrite-scenario-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: 2px;
+}
+
+.cowrite-scenario-desc {
+  font-size: 11px;
+  color: var(--color-ink-faint);
+}
+
+/* 统计面板 */
+.cowrite-stats-bar {
+  border-bottom: 1px solid var(--color-paper-deep);
+  background: var(--color-paper);
+}
+
+.cowrite-stats-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--color-ink-faint);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cowrite-stats-summary:hover {
+  color: var(--color-ink);
+}
+
+.cowrite-stats-label {
+  font-weight: 600;
+  color: var(--color-bamboo);
+}
+
+.cowrite-stats-toggle {
+  margin-left: auto;
+  color: var(--color-ink-ghost);
+}
+
+.cowrite-stats-detail {
+  padding: 0 20px 12px;
+}
+
+.cowrite-stats-row {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--color-ink-faint);
+  margin-bottom: 8px;
+}
+
+.cowrite-stats-bar-wrap {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-paper-deep);
+  margin-bottom: 8px;
+}
+
+.cowrite-stats-bar-human {
+  background: var(--color-ink);
+  transition: width 0.2s;
+}
+
+.cowrite-stats-bar-ai {
+  background: var(--color-bamboo);
+  transition: width 0.2s;
+}
+
+/* 灵感注入 */
+.cowrite-inspiration-area {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-paper-deep);
+  background: var(--color-paper-warm);
+}
+
+.cowrite-inspiration-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--color-ink-faint);
+}
+
+.cowrite-btn-inspiration {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-bamboo);
+  color: var(--color-cloud);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 12px;
+}
+
+.cowrite-btn-inspiration:hover {
+  background: var(--color-bamboo-light);
+}
+
+.cowrite-btn-inspiration:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cowrite-inspiration-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.cowrite-inspiration-card {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-paper-deep);
+  background: var(--color-cloud);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cowrite-inspiration-card:hover {
+  border-color: var(--color-bamboo);
+  background: var(--color-bamboo-mist);
+}
+
+.cowrite-inspiration-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-bamboo);
+  margin-bottom: 4px;
+}
+
+.cowrite-inspiration-snippet {
+  font-size: 12px;
+  color: var(--color-ink-faint);
+  line-height: 1.5;
+}
+
+/* 段落上的重新生成按钮 */
+.cowrite-block {
+  position: relative;
+}
+
+.cowrite-btn-regenerate {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 5px;
+  background: var(--color-paper-deep);
+  color: var(--color-ink-faint);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.cowrite-block.merged {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cowrite-block-merged-badge {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--color-bamboo);
+}
+
+.cowrite-block:hover .cowrite-btn-regenerate {
+  opacity: 1;
+}
+
+.cowrite-btn-regenerate:hover {
+  background: var(--color-bamboo);
+  color: var(--color-cloud);
+}
+
+.cowrite-btn-regenerate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 撤回与自动续写按钮 */
+.cowrite-btn-undo {
+  padding: 6px 14px;
+  border: 1px solid var(--color-paper-deep);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-ink-faint);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cowrite-btn-undo:hover:not(:disabled) {
+  border-color: var(--color-ink-ghost);
+  color: var(--color-ink);
+}
+
+.cowrite-btn-undo:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cowrite-btn-auto {
+  padding: 6px 14px;
+  border: 1px solid var(--color-paper-deep);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-ink-faint);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cowrite-btn-auto:hover {
+  border-color: var(--color-bamboo);
+  color: var(--color-bamboo);
+}
+
+.cowrite-btn-auto.active {
+  background: var(--color-bamboo);
+  border-color: var(--color-bamboo);
+  color: var(--color-cloud);
+}
+
+@media (max-width: 640px) {
+  .cowrite-inspiration-list {
+    grid-template-columns: 1fr;
+  }
 }

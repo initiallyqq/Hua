@@ -1,13 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
+use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-use crate::services::notes::{default_store, AppError, NoteMetadata};
+use crate::services::notes::{default_store, AppError};
+
+mod ai_client;
+mod prompts;
+
+pub use ai_client::request_ai_turn;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -157,10 +159,7 @@ pub fn list_sessions(note_id: &str) -> Result<Vec<CoWriteSessionSummary>, AppErr
     Ok(sessions)
 }
 
-pub fn append_human_text(
-    session_id: &str,
-    text: &str,
-) -> Result<CoWriteSession, AppError> {
+pub fn append_human_text(session_id: &str, text: &str) -> Result<CoWriteSession, AppError> {
     let mut session = get_session(session_id)?;
     session.blocks.push(AuthorBlock {
         author: "human".to_string(),
@@ -172,10 +171,7 @@ pub fn append_human_text(
     Ok(session)
 }
 
-pub fn append_ai_text(
-    session_id: &str,
-    text: &str,
-) -> Result<CoWriteSession, AppError> {
+pub fn append_ai_text(session_id: &str, text: &str) -> Result<CoWriteSession, AppError> {
     let mut session = get_session(session_id)?;
     session.blocks.push(AuthorBlock {
         author: "ai".to_string(),
@@ -187,13 +183,50 @@ pub fn append_ai_text(
     Ok(session)
 }
 
+pub fn replace_last_ai_text(session_id: &str, text: &str) -> Result<CoWriteSession, AppError> {
+    let mut session = get_session(session_id)?;
+    let last_index = session
+        .blocks
+        .iter()
+        .rposition(|b| b.author == "ai")
+        .ok_or_else(|| AppError {
+            code: "noAiBlock".into(),
+            message: "当前会话没有可替换的 AI 段落".into(),
+            details: BTreeMap::new(),
+        })?;
+    session.blocks[last_index] = AuthorBlock {
+        author: "ai".to_string(),
+        text: text.to_string(),
+        timestamp: now_ms(),
+    };
+    session.updated_at = Utc::now();
+    save_session(&session)?;
+    Ok(session)
+}
+
+pub fn undo_last(session_id: &str) -> Result<CoWriteSession, AppError> {
+    let mut session = get_session(session_id)?;
+    if session.blocks.is_empty() {
+        return Err(AppError {
+            code: "emptySession".into(),
+            message: "当前会话没有可撤回的段落".into(),
+            details: BTreeMap::new(),
+        });
+    }
+    session.blocks.pop();
+    session.updated_at = Utc::now();
+    save_session(&session)?;
+    Ok(session)
+}
+
 pub fn merge_to_note(
+    app: &AppHandle,
     session_id: &str,
     selected_block_indices: &[usize],
 ) -> Result<String, AppError> {
     let session = get_session(session_id)?;
     let store = default_store()?;
-    let mut note = store.read_note(&session.note_id)?;
+    let note = store.read_note(&session.note_id)?;
 
     let mut selected_texts: Vec<String> = Vec::new();
     for &idx in selected_block_indices {
@@ -218,6 +251,7 @@ pub fn merge_to_note(
         },
     )?;
 
+    let _ = app.emit("notes-changed", ());
     Ok(new_content)
 }
 

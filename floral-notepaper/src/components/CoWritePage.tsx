@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProviderConfig } from "../features/settings/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoWriteIdentity,
   CoWriteSession,
   CoWriteSessionSummary,
 } from "../features/cowrite/types";
+import type { ProviderConfig } from "../features/settings/types";
 import {
   createCoWriteSession,
   appendHumanText,
@@ -13,42 +13,121 @@ import {
   listCoWriteSessions,
   mergeToNote,
   deleteCoWriteSession,
+  replaceLastAIText,
+  undoLastTurn,
 } from "../features/cowrite/api";
-import { requestCoWriteAITurn } from "../features/cowrite/coWriteAI";
-import { blocksToText, formatSessionPreview, sessionWordCount } from "../features/cowrite/coWriteUtils";
+import {
+  requestCoWriteAITurn,
+  regenerateCoWriteAITurn,
+  generateInspirations,
+  type CoWriteInspiration,
+} from "../features/cowrite/coWriteAI";
+import { getNote } from "../features/notes/api";
+import { computeCoWriteStats } from "../features/cowrite/coWriteUtils";
+import { SCENARIO_PRESETS, getScenario } from "../features/cowrite/prompts";
 
-interface CoWritePageProps {
+export interface CoWritePageProps {
   providers: ProviderConfig[];
   noteId: string;
   noteContent: string;
 }
 
-const IDENTITY_OPTIONS: { key: CoWriteIdentity; label: string; desc: string }[] = [
-  { key: "continuator", label: "续写者", desc: "顺着你的思路往下写" },
-  { key: "questioner", label: "追问者", desc: "不断追问，帮你挖得更深" },
-  { key: "opposer", label: "反对者", desc: "找反例、挑漏洞" },
-  { key: "poetic", label: "诗意者", desc: "注入诗意和画面感" },
-  { key: "custom", label: "自定义", desc: "自己定义 AI 的角色" },
-];
+const IDENTITY_OPTIONS: { key: CoWriteIdentity; label: string; desc: string }[] =
+  [
+    { key: "continuator", label: "续写者", desc: "顺着你的思路往下写" },
+    { key: "questioner", label: "追问者", desc: "不断追问，帮你挖得更深" },
+    { key: "opposer", label: "反对者", desc: "找反例、挑漏洞" },
+    { key: "poetic", label: "诗意者", desc: "注入诗意和画面感" },
+    { key: "custom", label: "自定义", desc: "自己定义 AI 的角色" },
+  ];
 
-export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps) {
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "0 秒";
+  const seconds = Math.floor(ms / 1000);
+  const mins = Math.floor(seconds / 60);
+  const hours = Math.floor(mins / 60);
+  if (hours > 0) return `${hours} 小时 ${mins % 60} 分`;
+  if (mins > 0) return `${mins} 分 ${seconds % 60} 秒`;
+  return `${seconds} 秒`;
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  if (diff < 10_000) return "刚刚";
+  const seconds = Math.floor(diff / 1000);
+  const mins = Math.floor(seconds / 60);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  if (days > 0) return `${days} 天前`;
+  if (hours > 0) return `${hours} 小时前`;
+  if (mins > 0) return `${mins} 分钟前`;
+  return "刚刚";
+}
+
+export function CoWritePage({
+  providers,
+  noteId,
+  noteContent,
+}: CoWritePageProps) {
   const [sessions, setSessions] = useState<CoWriteSessionSummary[]>([]);
   const [activeSession, setActiveSession] = useState<CoWriteSession | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
-  const [selectedIdentity, setSelectedIdentity] = useState<CoWriteIdentity>("continuator");
+  const [selectedScenarioKey, setSelectedScenarioKey] = useState<string | null>(
+    null,
+  );
+  const [selectedIdentity, setSelectedIdentity] =
+    useState<CoWriteIdentity>("continuator");
   const [customPrompt, setCustomPrompt] = useState("");
   const [humanInput, setHumanInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<number>>(new Set());
-  const [mergeDone, setMergeDone] = useState(false);
+  const [mergedBlockIndices, setMergedBlockIndices] = useState<Set<number>>(
+    new Set(),
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noteTitle, setNoteTitle] = useState<string | null>(null);
+  const [autoTurn, setAutoTurn] = useState(false);
+  const [statsExpanded, setStatsExpanded] = useState(false);
+  const [inspirations, setInspirations] = useState<CoWriteInspiration[]>([]);
+  const [inspirationsLoading, setInspirationsLoading] = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
 
-  // 加载会话列表
+  // 新内容自动滚动到底部
   useEffect(() => {
+    if (editRef.current) {
+      editRef.current.scrollTo({
+        top: editRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [activeSession?.blocks.length]);
+
+  // 加载当前笔记标题
+  useEffect(() => {
+    if (!noteId) {
+      setNoteTitle(null);
+      return;
+    }
+    getNote(noteId)
+      .then((note) => setNoteTitle(note.title || null))
+      .catch(() => setNoteTitle(null));
+  }, [noteId]);
+
+  // 加载会话列表，笔记切换时清空当前会话避免串到其它笔记
+  useEffect(() => {
+    setErrorMessage(null);
+    setActiveSession(null);
+    setActiveSessionId(null);
+    setSelectedBlocks(new Set());
+    setMergedBlockIndices(new Set());
+    setInspirations([]);
     listCoWriteSessions(noteId)
       .then(setSessions)
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        setErrorMessage(e instanceof Error ? e.message : "加载会话列表失败");
+      });
   }, [noteId]);
 
   // 切换到某个会话
@@ -58,30 +137,75 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
       setActiveSession(session);
       setActiveSessionId(sessionId);
       setSelectedBlocks(new Set());
-      setMergeDone(false);
+      setMergedBlockIndices(new Set());
+      setErrorMessage(null);
+      setInspirations([]);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "加载会话失败");
     }
   }, []);
+
+  const runAITurn = useCallback(
+    async (session: CoWriteSession) => {
+      setAiLoading(true);
+      setErrorMessage(null);
+      try {
+        const aiText = await requestCoWriteAITurn(
+          session,
+          session.identity,
+          session.customPrompt,
+          providers,
+        );
+        if (!aiText.trim()) {
+          throw new Error("AI 返回内容为空");
+        }
+        const updated = await appendAIText(session.id, aiText);
+        setActiveSession(updated);
+      } catch (e) {
+        console.error("[cowrite] AI turn failed", e);
+        setErrorMessage(e instanceof Error ? e.message : "AI 调用失败");
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [providers],
+  );
 
   // 新建会话
   const handleCreate = useCallback(async () => {
     try {
+      const scenario = selectedScenarioKey
+        ? getScenario(selectedScenarioKey)
+        : null;
+      const identity = scenario?.identity ?? selectedIdentity;
+      const prompt = scenario?.systemPrompt ??
+        (selectedIdentity === "custom" ? customPrompt : undefined);
+
       const session = await createCoWriteSession(
         noteId,
-        selectedIdentity,
-        selectedIdentity === "custom" ? customPrompt : undefined,
+        identity,
+        prompt,
       );
-      setActiveSession(session);
-      setActiveSessionId(session.id);
+
+      let currentSession = session;
+      if (scenario) {
+        currentSession = await appendAIText(session.id, scenario.openingLine);
+      }
+
+      setActiveSession(currentSession);
+      setActiveSessionId(currentSession.id);
       setShowNewDialog(false);
+      setSelectedScenarioKey(null);
       setCustomPrompt("");
+      setErrorMessage(null);
       const list = await listCoWriteSessions(noteId);
       setSessions(list);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "创建会话失败");
     }
-  }, [noteId, selectedIdentity, customPrompt]);
+  }, [noteId, selectedScenarioKey, selectedIdentity, customPrompt]);
 
   // 人类写一段
   const handleHumanSubmit = useCallback(async () => {
@@ -90,58 +214,158 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
       const updated = await appendHumanText(activeSessionId, humanInput.trim());
       setActiveSession(updated);
       setHumanInput("");
+      setErrorMessage(null);
+      if (autoTurn) {
+        await runAITurn(updated);
+      }
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "提交失败");
     }
-  }, [humanInput, activeSessionId]);
+  }, [humanInput, activeSessionId, autoTurn, runAITurn]);
 
-  // AI 续写
-  const handleAITurn = useCallback(async () => {
+  // AI 续写（手动触发）
+  const handleAITurn = useCallback(() => {
     if (!activeSession || aiLoading) return;
+    void runAITurn(activeSession);
+  }, [activeSession, aiLoading, runAITurn]);
+
+  // 重新生成最后一段 AI
+  const handleRegenerate = useCallback(async () => {
+    if (!activeSession || aiLoading) return;
+    const last = activeSession.blocks[activeSession.blocks.length - 1];
+    if (!last || last.author !== "ai") {
+      setErrorMessage("最后一段不是 AI 内容，无法重新生成");
+      return;
+    }
     setAiLoading(true);
+    setErrorMessage(null);
     try {
-      const aiText = await requestCoWriteAITurn(
+      const aiText = await regenerateCoWriteAITurn(
         activeSession,
         activeSession.identity,
         activeSession.customPrompt,
         providers,
       );
-      const updated = await appendAIText(activeSession.id, aiText);
+      if (!aiText.trim()) {
+        throw new Error("AI 返回内容为空");
+      }
+      const updated = await replaceLastAIText(activeSession.id, aiText);
       setActiveSession(updated);
     } catch (e) {
-      console.error(e);
+      console.error("[cowrite] regenerate failed", e);
+      setErrorMessage(e instanceof Error ? e.message : "重新生成失败");
     } finally {
       setAiLoading(false);
     }
   }, [activeSession, aiLoading, providers]);
 
+  // 撤回上一步
+  const handleUndo = useCallback(async () => {
+    if (!activeSession || activeSession.blocks.length === 0) return;
+    const lastIndex = activeSession.blocks.length - 1;
+    const last = activeSession.blocks[lastIndex];
+    const desc = last.author === "ai" ? "AI 的最后一段回复" : "你最后的输入";
+    if (!window.confirm(`确定要撤回${desc}吗？`)) return;
+    try {
+      const updated = await undoLastTurn(activeSession.id);
+      setActiveSession(updated);
+      setMergedBlockIndices((prev) => {
+        if (!prev.has(lastIndex)) return prev;
+        const next = new Set(prev);
+        next.delete(lastIndex);
+        return next;
+      });
+      setErrorMessage(null);
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "撤回失败");
+    }
+  }, [activeSession]);
+
   // 合并到笔记
   const handleMerge = useCallback(async () => {
     if (!activeSessionId || selectedBlocks.size === 0) return;
     try {
-      await mergeToNote(activeSessionId, Array.from(selectedBlocks).sort((a, b) => a - b));
-      setMergeDone(true);
+      await mergeToNote(
+        activeSessionId,
+        Array.from(selectedBlocks).sort((a, b) => a - b),
+      );
+      setMergedBlockIndices((prev) => {
+        const next = new Set(prev);
+        for (const idx of selectedBlocks) {
+          next.add(idx);
+        }
+        return next;
+      });
+      setSelectedBlocks(new Set());
+      setErrorMessage(null);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "合并失败");
     }
   }, [activeSessionId, selectedBlocks]);
 
   // 删除会话
-  const handleDelete = useCallback(async (sessionId: string) => {
-    try {
-      await deleteCoWriteSession(sessionId);
-      if (activeSessionId === sessionId) {
-        setActiveSession(null);
-        setActiveSessionId(null);
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      try {
+        await deleteCoWriteSession(sessionId);
+        if (activeSessionId === sessionId) {
+          setActiveSession(null);
+          setActiveSessionId(null);
+        }
+        setErrorMessage(null);
+        const list = await listCoWriteSessions(noteId);
+        setSessions(list);
+      } catch (e) {
+        console.error(e);
+        setErrorMessage(e instanceof Error ? e.message : "删除失败");
       }
-      const list = await listCoWriteSessions(noteId);
-      setSessions(list);
+    },
+    [noteId, activeSessionId],
+  );
+
+  // 获取灵感
+  const handleGetInspirations = useCallback(async () => {
+    if (providers.length === 0) {
+      setErrorMessage("没有可用的 AI 供应商");
+      return;
+    }
+    setInspirationsLoading(true);
+    setErrorMessage(null);
+    try {
+      const items = await generateInspirations(noteContent, providers);
+      setInspirations(items);
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : "获取灵感失败");
+    } finally {
+      setInspirationsLoading(false);
     }
-  }, [noteId, activeSessionId]);
+  }, [noteContent, providers]);
+
+  // 使用灵感
+  const handleUseInspiration = useCallback(
+    async (item: CoWriteInspiration) => {
+      if (!activeSessionId) return;
+      try {
+        const updated = await appendHumanText(activeSessionId, item.snippet);
+        setActiveSession(updated);
+        setInspirations([]);
+        setErrorMessage(null);
+        // 灵感卡片点击后自动写入 human 开头并触发 AI 续写
+        await runAITurn(updated);
+      } catch (e) {
+        console.error(e);
+        setErrorMessage(e instanceof Error ? e.message : "使用灵感失败");
+      }
+    },
+    [activeSessionId, runAITurn],
+  );
 
   const toggleBlock = (index: number) => {
+    if (mergedBlockIndices.has(index)) return;
     const next = new Set(selectedBlocks);
     if (next.has(index)) {
       next.delete(index);
@@ -151,20 +375,57 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
     setSelectedBlocks(next);
   };
 
-  const currentTurn = activeSession
-    ? (activeSession.blocks.length === 0 ||
-       activeSession.blocks[activeSession.blocks.length - 1].author === "ai"
-        ? "human"
-        : "ai")
-    : "human";
+  const currentTurn = useMemo(() => {
+    if (!activeSession || activeSession.blocks.length === 0) return "human";
+    const last = activeSession.blocks[activeSession.blocks.length - 1];
+    return last.author === "human" ? "ai" : "human";
+  }, [activeSession]);
+
+  const stats = useMemo(
+    () => (activeSession ? computeCoWriteStats(activeSession) : null),
+    [activeSession],
+  );
+
+  console.log("[cowrite] render", {
+    noteId,
+    activeSessionId,
+    currentTurn,
+    blocksCount: activeSession?.blocks.length,
+  });
+
+  const hasNote = Boolean(noteId);
+
+  if (!hasNote) {
+    return (
+      <div className="cowrite-container">
+        <div className="cowrite-main" style={{ width: "100%" }}>
+          <div className="cowrite-placeholder">
+            请先在左侧边栏点击“笔记”，选择一篇笔记后再开始共笔
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="cowrite-container">
       {/* 左侧：会话列表 */}
       <div className="cowrite-sidebar">
+        {noteId && (
+          <div className="cowrite-note-info" title={noteTitle ?? noteId}>
+            <span className="cowrite-note-info-label">当前笔记</span>
+            <span className="cowrite-note-info-title">
+              {noteTitle || "（无标题）"}
+            </span>
+          </div>
+        )}
         <div className="cowrite-sidebar-header">
           <h3>共笔会话</h3>
-          <button className="cowrite-btn-new" onClick={() => setShowNewDialog(true)}>
+          <button
+            className="cowrite-btn-new"
+            onClick={() => setShowNewDialog(true)}
+            title="新建共笔会话"
+          >
             + 新建
           </button>
         </div>
@@ -181,11 +442,12 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
               >
                 <div className="cowrite-session-meta">
                   <span className="cowrite-session-identity">
-                    {IDENTITY_OPTIONS.find((o) => o.key === s.identity)?.label ?? s.identity}
+                    {IDENTITY_OPTIONS.find((o) => o.key === s.identity)?.label ??
+                      s.identity}
                   </span>
                   <span className="cowrite-session-count">{s.blockCount} 段</span>
                 </div>
-                <div className="cowrite-session-preview">{formatSessionPreview([]) || s.preview}</div>
+                <div className="cowrite-session-preview">{s.preview}</div>
                 <button
                   className="cowrite-session-delete"
                   onClick={(e) => {
@@ -203,12 +465,91 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
 
       {/* 右侧：编辑区 */}
       <div className="cowrite-main">
+        {errorMessage && (
+          <div
+            className="cowrite-error-bar"
+            style={{
+              padding: "10px 20px",
+              fontSize: "12px",
+              color: "#ef4444",
+              background: "var(--color-danger-bg)",
+              borderBottom: "1px solid var(--color-paper-deep)",
+            }}
+          >
+            {errorMessage}
+          </div>
+        )}
+
         {!activeSession ? (
           <div className="cowrite-placeholder">
             选择一个共笔会话，或新建一个
           </div>
         ) : (
           <>
+            {/* 统计面板 */}
+            {stats && (
+              <div
+                className={`cowrite-stats-bar ${
+                  statsExpanded ? "expanded" : ""
+                }`}
+              >
+                <div
+                  className="cowrite-stats-summary"
+                  onClick={() => setStatsExpanded((v) => !v)}
+                >
+                  <span className="cowrite-stats-label">统计</span>
+                  <span>
+                    {stats.humanBlocks} 人 / {stats.aiBlocks} AI
+                  </span>
+                  <span>{stats.humanChars + stats.aiChars} 字</span>
+                  <span className="cowrite-stats-toggle">
+                    {statsExpanded ? "收起" : "展开"}
+                  </span>
+                </div>
+                {statsExpanded && (
+                  <div className="cowrite-stats-detail">
+                    <div className="cowrite-stats-row">
+                      <span>人：{stats.humanChars} 字 / {stats.humanBlocks} 段</span>
+                      <span>AI：{stats.aiChars} 字 / {stats.aiBlocks} 段</span>
+                      <span>总轮次：{stats.totalTurns}</span>
+                    </div>
+                    <div className="cowrite-stats-bar-wrap">
+                      <div
+                        className="cowrite-stats-bar-human"
+                        style={{
+                          width: `${
+                            stats.humanChars + stats.aiChars === 0
+                              ? 50
+                              : (stats.humanChars /
+                                  (stats.humanChars + stats.aiChars)) *
+                                100
+                          }%`,
+                        }}
+                      />
+                      <div
+                        className="cowrite-stats-bar-ai"
+                        style={{
+                          width: `${
+                            stats.humanChars + stats.aiChars === 0
+                              ? 50
+                              : (stats.aiChars /
+                                  (stats.humanChars + stats.aiChars)) *
+                                100
+                          }%`,
+                        }}
+                      />
+                    </div>
+                    <div className="cowrite-stats-row">
+                      <span>会话时长：{formatDuration(stats.durationMs)}</span>
+                      <span>
+                        最后活跃：{formatRelativeTime(stats.lastActiveAt)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 轮次指示器 */}
             <div className="cowrite-turn-indicator">
               {aiLoading ? (
@@ -220,6 +561,40 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
               )}
             </div>
 
+            {/* 灵感注入 */}
+            {activeSession.blocks.length === 0 && !aiLoading && (
+              <div className="cowrite-inspiration-area">
+                <p className="cowrite-inspiration-hint">
+                  不知道写什么？AI 可以给你一些灵感
+                </p>
+                <button
+                  className="cowrite-btn-inspiration"
+                  onClick={() => handleGetInspirations()}
+                  disabled={inspirationsLoading}
+                >
+                  {inspirationsLoading ? "获取中…" : "获取灵感"}
+                </button>
+                {inspirations.length > 0 && (
+                  <div className="cowrite-inspiration-list">
+                    {inspirations.map((item, index) => (
+                      <div
+                        key={index}
+                        className="cowrite-inspiration-card"
+                        onClick={() => handleUseInspiration(item)}
+                      >
+                        <div className="cowrite-inspiration-title">
+                          {item.title}
+                        </div>
+                        <div className="cowrite-inspiration-snippet">
+                          {item.snippet}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 内容展示区 */}
             <div ref={editRef} className="cowrite-content">
               {activeSession.blocks.map((block, i) => (
@@ -227,13 +602,30 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
                   key={i}
                   className={`cowrite-block cowrite-author-${block.author} ${
                     selectedBlocks.has(i) ? "selected" : ""
-                  }`}
+                  } ${mergedBlockIndices.has(i) ? "merged" : ""}`}
                   onClick={() => toggleBlock(i)}
+                  title={mergedBlockIndices.has(i) ? "已合并到笔记" : ""}
                 >
                   <span className="cowrite-block-author">
                     {block.author === "human" ? "你" : "AI"}
+                    {mergedBlockIndices.has(i) && (
+                      <span className="cowrite-block-merged-badge">✓</span>
+                    )}
                   </span>
                   <p className="cowrite-block-text">{block.text}</p>
+                  {block.author === "ai" && (
+                    <button
+                      className="cowrite-btn-regenerate"
+                      title="重新生成"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRegenerate();
+                      }}
+                      disabled={aiLoading}
+                    >
+                      ⟳
+                    </button>
+                  )}
                 </div>
               ))}
               {activeSession.blocks.length === 0 && (
@@ -254,26 +646,51 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
                 />
                 <div className="cowrite-input-actions">
                   <button
+                    className="cowrite-btn-undo"
+                    onClick={() => handleUndo()}
+                    disabled={activeSession.blocks.length === 0}
+                  >
+                    撤回
+                  </button>
+                  <button
+                    className={`cowrite-btn-auto ${autoTurn ? "active" : ""}`}
+                    onClick={() => setAutoTurn((v) => !v)}
+                  >
+                    {autoTurn ? "手动模式" : "自动续写"}
+                  </button>
+                  <button
                     className="cowrite-btn-submit"
-                    onClick={handleHumanSubmit}
+                    onClick={() => handleHumanSubmit()}
                     disabled={!humanInput.trim()}
                   >
                     提交
                   </button>
-                  <button
-                    className="cowrite-btn-ai"
-                    onClick={handleAITurn}
-                    disabled={aiLoading}
-                  >
-                    轮到 AI
-                  </button>
+                  {!autoTurn && (
+                    <button
+                      className="cowrite-btn-ai"
+                      onClick={() => handleAITurn()}
+                      disabled={aiLoading}
+                    >
+                      轮到 AI
+                    </button>
+                  )}
                 </div>
               </div>
             )}
 
             {currentTurn === "ai" && !aiLoading && (
               <div className="cowrite-input-area">
-                <button className="cowrite-btn-ai" onClick={handleAITurn}>
+                <button
+                  className="cowrite-btn-undo"
+                  onClick={() => handleUndo()}
+                  disabled={activeSession.blocks.length === 0}
+                >
+                  撤回
+                </button>
+                <button
+                  className="cowrite-btn-ai"
+                  onClick={() => handleAITurn()}
+                >
                   轮到 AI
                 </button>
               </div>
@@ -283,14 +700,19 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
             {activeSession.blocks.length > 0 && (
               <div className="cowrite-merge-bar">
                 <span className="cowrite-merge-hint">
-                  点击段落选中/取消，选中后合并到笔记
+                  点击段落选中/取消，已合并的段落无法再次选中
                 </span>
                 <button
                   className="cowrite-btn-merge"
-                  onClick={handleMerge}
-                  disabled={selectedBlocks.size === 0 || mergeDone}
+                  onClick={() => handleMerge()}
+                  disabled={
+                    selectedBlocks.size === 0 ||
+                    Array.from(selectedBlocks).some((i) =>
+                      mergedBlockIndices.has(i),
+                    )
+                  }
                 >
-                  {mergeDone ? "已合并" : `合并选中段落 (${selectedBlocks.size})`}
+                  合并选中段落 ({selectedBlocks.size})
                 </button>
               </div>
             )}
@@ -300,9 +722,37 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
 
       {/* 新建会话弹窗 */}
       {showNewDialog && (
-        <div className="cowrite-dialog-overlay" onClick={() => setShowNewDialog(false)}>
+        <div
+          className="cowrite-dialog-overlay"
+          onClick={() => setShowNewDialog(false)}
+        >
           <div className="cowrite-dialog" onClick={(e) => e.stopPropagation()}>
             <h3>新建共笔会话</h3>
+
+            <div className="cowrite-section-label">选择场景（可选）</div>
+            <div className="cowrite-scenario-grid">
+              {SCENARIO_PRESETS.map((scenario) => (
+                <div
+                  key={scenario.key}
+                  className={`cowrite-scenario-card ${
+                    selectedScenarioKey === scenario.key ? "active" : ""
+                  }`}
+                  onClick={() => {
+                    setSelectedScenarioKey(scenario.key);
+                    setSelectedIdentity(scenario.identity);
+                    setCustomPrompt(scenario.systemPrompt);
+                  }}
+                >
+                  <div className="cowrite-scenario-icon">{scenario.icon}</div>
+                  <div className="cowrite-scenario-label">{scenario.label}</div>
+                  <div className="cowrite-scenario-desc">
+                    {scenario.description}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="cowrite-section-label">AI 身份</div>
             <div className="cowrite-identity-grid">
               {IDENTITY_OPTIONS.map((opt) => (
                 <div
@@ -310,7 +760,13 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
                   className={`cowrite-identity-card ${
                     selectedIdentity === opt.key ? "active" : ""
                   }`}
-                  onClick={() => setSelectedIdentity(opt.key)}
+                  onClick={() => {
+                    setSelectedIdentity(opt.key);
+                    if (selectedScenarioKey) {
+                      setSelectedScenarioKey(null);
+                      if (opt.key !== "custom") setCustomPrompt("");
+                    }
+                  }}
                 >
                   <div className="cowrite-identity-label">{opt.label}</div>
                   <div className="cowrite-identity-desc">{opt.desc}</div>
@@ -333,7 +789,7 @@ export function CoWritePage({ providers, noteId, noteContent }: CoWritePageProps
               >
                 取消
               </button>
-              <button className="cowrite-btn-create" onClick={handleCreate}>
+              <button className="cowrite-btn-create" onClick={() => handleCreate()}>
                 创建
               </button>
             </div>

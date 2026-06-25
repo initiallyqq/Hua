@@ -289,12 +289,14 @@ interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
   initialErrorMessage?: string | null;
+  onCurrentNoteChange?: (note: { id: string; content: string }) => void;
 }
 
 export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
   initialErrorMessage = null,
+  onCurrentNoteChange,
 }: MainWindowProps = {}) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
@@ -500,10 +502,12 @@ export function MainWindow({
     setContent(note.content);
     setSaveState("saved");
     setErrorMessage(null);
+    console.log("[MainWindow] applyNote -> onCurrentNoteChange", { id: note.id, title: note.title });
+    onCurrentNoteChange?.({ id: note.id, content: note.content });
     if (selectedIdRef.current !== note.id) {
       setNoteTransitionKey((k) => k + 1);
     }
-  }, []);
+  }, [onCurrentNoteChange]);
 
   const replaceNoteMetadata = useCallback((note: Note) => {
     const metadata = metadataFromNote(note);
@@ -836,13 +840,14 @@ export function MainWindow({
       saveStateRef.current = "saved";
       setSaveState("saved");
       setErrorMessage(null);
+      onCurrentNoteChange?.({ id: selectedId, content: latestContent });
       return note;
     } catch (error) {
       setSaveState("error");
       setErrorMessage(getErrorMessage(error));
       return null;
     }
-  }, [isExternal, replaceNoteMetadata, selectedExternalFile, selectedId, selectedNote, title]);
+  }, [isExternal, onCurrentNoteChange, replaceNoteMetadata, selectedExternalFile, selectedId, selectedNote, title]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {

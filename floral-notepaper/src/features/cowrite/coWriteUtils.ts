@@ -1,4 +1,4 @@
-import type { AuthorBlock, CoWriteSession } from "./types";
+import type { AuthorBlock, CoWriteSession, CoWriteStats } from "./types";
 
 export function splitBlocksByAuthor(
   blocks: AuthorBlock[],
@@ -53,4 +53,37 @@ export function sessionDuration(session: CoWriteSession): number {
   const first = session.blocks[0].timestamp;
   const last = session.blocks[session.blocks.length - 1].timestamp;
   return last - first;
+}
+
+export function computeCoWriteStats(session: CoWriteSession): CoWriteStats {
+  const humanBlocks: AuthorBlock[] = [];
+  const aiBlocks: AuthorBlock[] = [];
+  for (const block of session.blocks) {
+    if (block.author === "human") humanBlocks.push(block);
+    else aiBlocks.push(block);
+  }
+
+  const humanChars = humanBlocks.reduce(
+    (sum, b) => sum + b.text.replace(/\s/g, "").length,
+    0,
+  );
+  const aiChars = aiBlocks.reduce(
+    (sum, b) => sum + b.text.replace(/\s/g, "").length,
+    0,
+  );
+
+  const lastActiveAt =
+    session.blocks.length > 0
+      ? session.blocks[session.blocks.length - 1].timestamp
+      : new Date(session.updatedAt).getTime();
+
+  return {
+    humanBlocks: humanBlocks.length,
+    aiBlocks: aiBlocks.length,
+    humanChars,
+    aiChars,
+    totalTurns: session.blocks.length,
+    durationMs: sessionDuration(session),
+    lastActiveAt,
+  };
 }

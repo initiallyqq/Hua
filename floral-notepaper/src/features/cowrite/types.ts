@@ -30,3 +30,23 @@ export interface CoWriteSessionSummary {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CoWriteScenario {
+  key: string;
+  label: string;
+  icon: string;
+  description: string;
+  identity: CoWriteIdentity;
+  systemPrompt: string;
+  openingLine: string;
+}
+
+export interface CoWriteStats {
+  humanBlocks: number;
+  aiBlocks: number;
+  humanChars: number;
+  aiChars: number;
+  totalTurns: number;
+  durationMs: number;
+  lastActiveAt: number;
+}
