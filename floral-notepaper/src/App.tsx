@@ -8,6 +8,7 @@ import { AppSidebar } from "./components/AppSidebar";
 import { SettingsPage } from "./components/SettingsPage";
 import { DashboardPage } from "./components/DashboardPage";
 import { InkPlaybackPage } from "./components/InkPlaybackPage";
+import { CoWritePage } from "./components/CoWritePage";
 import { WindowFrame } from "./components/WindowFrame";
 import { tabToIndentListener } from "indent-textarea";
 import { getConfig, saveConfig } from "./features/settings/api";
@@ -155,6 +156,12 @@ function App() {
               <DashboardPage />
             ) : sidebarView === "playback" ? (
               <InkPlaybackPage />
+            ) : sidebarView === "cowrite" && settingsConfig ? (
+              <CoWritePage
+                providers={providers}
+                noteId=""
+                noteContent=""
+              />
             ) : sidebarView === "settings" && settingsConfig ? (
               <SettingsPage
                 config={settingsConfig}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export type AppView = "home" | "main" | "settings" | "playback";
+export type AppView = "home" | "main" | "settings" | "playback" | "cowrite";
 
 interface AppSidebarProps {
   activeView: AppView;
@@ -50,10 +50,21 @@ function SettingsIcon({ size = 18 }: { size?: number }) {
   );
 }
 
+function CowriteIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+      <path d="M15 5l4 4" />
+      <path d="M7 20h1" opacity="0.4" />
+    </svg>
+  );
+}
+
 const sidebarItems: SidebarItem[] = [
   { view: "home", label: "首页", icon: HomeIcon },
   { view: "main", label: "笔记", icon: NoteIcon },
   { view: "playback", label: "墨迹回放", icon: PlaybackIcon },
+  { view: "cowrite", label: "共笔", icon: CowriteIcon },
 ];
 
 export function AppSidebar({ activeView, onViewChange }: AppSidebarProps) {

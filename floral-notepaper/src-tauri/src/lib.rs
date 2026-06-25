@@ -3,6 +3,7 @@ pub mod locales;
 pub mod services;
 
 use locales::Locale;
+use services::cowrite::{self, CoWriteSession, CoWriteSessionSummary};
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use services::stats;
 use std::{fs, path::PathBuf};
@@ -316,6 +317,48 @@ fn stats_log_usage(
     stats::log_usage(provider, input_tokens, output_tokens, cached_tokens)
 }
 
+#[tauri::command]
+fn cowrite_create_session(
+    note_id: String,
+    identity: String,
+    custom_prompt: Option<String>,
+) -> Result<CoWriteSession, AppError> {
+    cowrite::create_session(&note_id, &identity, custom_prompt.as_deref())
+}
+
+#[tauri::command]
+fn cowrite_append_human(session_id: String, text: String) -> Result<CoWriteSession, AppError> {
+    cowrite::append_human_text(&session_id, &text)
+}
+
+#[tauri::command]
+fn cowrite_append_ai(session_id: String, text: String) -> Result<CoWriteSession, AppError> {
+    cowrite::append_ai_text(&session_id, &text)
+}
+
+#[tauri::command]
+fn cowrite_get_session(session_id: String) -> Result<CoWriteSession, AppError> {
+    cowrite::get_session(&session_id)
+}
+
+#[tauri::command]
+fn cowrite_list_sessions(note_id: String) -> Result<Vec<CoWriteSessionSummary>, AppError> {
+    cowrite::list_sessions(&note_id)
+}
+
+#[tauri::command]
+fn cowrite_merge_to_note(
+    session_id: String,
+    selected_block_indices: Vec<usize>,
+) -> Result<String, AppError> {
+    cowrite::merge_to_note(&session_id, &selected_block_indices)
+}
+
+#[tauri::command]
+fn cowrite_delete_session(session_id: String) -> Result<(), AppError> {
+    cowrite::delete_session(&session_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -372,7 +415,14 @@ pub fn run() {
             open_note_in_editor,
             take_startup_file,
             stats_get,
-            stats_log_usage
+            stats_log_usage,
+            cowrite_create_session,
+            cowrite_append_human,
+            cowrite_append_ai,
+            cowrite_get_session,
+            cowrite_list_sessions,
+            cowrite_merge_to_note,
+            cowrite_delete_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
