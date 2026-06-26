@@ -30,6 +30,7 @@ import { HeatmapView } from "./HeatmapView";
 import type { ModelConfig } from "../features/settings/types";
 import { getStats } from "../features/settings/stats";
 import type { StatsData } from "../features/settings/stats";
+import { AccountPanel } from "./AccountPanel";
 
 /* ─── settings section enum ─── */
 type SettingsSection =
@@ -37,6 +38,7 @@ type SettingsSection =
   | "providers"
   | "defaultModels"
   | "hotkeys"
+  | "account"
   | "stats"
   | "about";
 
@@ -51,6 +53,7 @@ const SECTIONS: SectionDef[] = [
   { key: "providers", label: "供应商", icon: "boxes" },
   { key: "defaultModels", label: "默认模型", icon: "heart" },
   { key: "hotkeys", label: "快捷键", icon: "keyboard" },
+  { key: "account", label: "账户", icon: "user" },
   { key: "stats", label: "统计", icon: "chart" },
   { key: "about", label: "关于", icon: "info" },
 ];
@@ -196,6 +199,13 @@ function SectionIcon({ type, size, color }: { type: string; size: number; color:
           <line x1="12" y1="11" x2="12" y2="16.5" />
         </svg>
       );
+    case "user":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -224,6 +234,8 @@ function SectionContent({
       return <DefaultModelsPanel config={config} providers={providers} onChange={onConfigChange} />;
     case "hotkeys":
       return <HotkeysPanel config={config} onChange={onConfigChange} />;
+    case "account":
+      return <AccountPanel config={config} onConfigChange={onConfigChange} />;
     case "stats":
       return <StatsPanel providers={providers} />;
     case "about":

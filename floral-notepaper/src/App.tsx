@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import "./App.css";
 import { ContextMenuProvider } from "./components/ContextMenu";
 import { MainWindow } from "./components/MainWindow";
@@ -19,6 +19,8 @@ import { getInitialRoute } from "./features/windows/windowRoutes";
 import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
 import { listNotes, getNote } from "./features/notes/api";
+import { supabase } from "./features/auth/supabase";
+import { uploadConfig, downloadConfig } from "./features/sync/api";
 
 function App() {
   const route = getInitialRoute();
@@ -28,6 +30,56 @@ function App() {
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(null);
   const [currentNoteId, setCurrentNoteId] = useState("");
   const [currentNoteContent, setCurrentNoteContent] = useState("");
+
+  // 认证状态
+  const [userId, setUserId] = useState<string | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 监听认证状态变化
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) {
+        setUserId(data.session.user.id);
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        setUserId(session.user.id);
+      } else if (event === "SIGNED_OUT") {
+        setUserId(null);
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
+
+  // 登录后自动拉取云端配置
+  useEffect(() => {
+    if (!userId || !settingsConfig) return;
+    downloadConfig(userId)
+      .then((remote) => {
+        if (remote) {
+          // 合并：remote 覆盖本地（云端优先）
+          const merged = { ...settingsConfig, ...remote };
+          setSettingsConfig(merged);
+          setProviders(merged.providers ?? []);
+        }
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  // 配置变更时自动上传（防抖 3 秒）
+  const scheduleSync = useCallback(
+    (config: AppConfig) => {
+      if (!userId) return;
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        uploadConfig(userId, config).catch(() => {});
+      }, 3000);
+    },
+    [userId],
+  );
 
   const handleCurrentNoteChange = useCallback(
     (note: { id: string; content: string }) => {
@@ -126,12 +178,13 @@ function App() {
         try {
           const saved = await saveConfig(updated);
           setSettingsConfig(saved);
+          scheduleSync(saved);
         } catch {
           // silently fail
         }
       }
     },
-    [settingsConfig],
+    [settingsConfig, scheduleSync],
   );
 
   const handleConfigChange = useCallback(
@@ -140,11 +193,12 @@ function App() {
       try {
         const saved = await saveConfig(newConfig);
         setSettingsConfig(saved);
+        scheduleSync(saved);
       } catch {
         // silently fail
       }
     },
-    [],
+    [scheduleSync],
   );
 
   if (route.view === "notepad") {
